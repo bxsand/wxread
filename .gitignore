@@ -10,8 +10,13 @@ logs/
 .env
 .env.local
 .env.*.local
+
+# IDE
 .idea/
 .vscode/
-capture/
+
+# 本地抓包产物（位置池需要保留）
+capture/*
 !capture/positions.json
+
 .DS_Store
