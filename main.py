@@ -8,7 +8,7 @@ import requests
 import urllib.parse
 from push import push
 from log_utils import setup_logging
-from config import data, headers, cookies, READ_NUM, PUSH_METHOD, book, chapter
+from config import data, headers, cookies, READ_NUM, PUSH_METHOD, book, chapter, positions
 
 
 # 加密盐及其它默认值
@@ -75,6 +75,10 @@ def fix_no_synckey():
     )
     response.raise_for_status()
 
+# 位置池：按 (ci, co) 排序，游标顺序推进；5% 概率回退一页，接近真人回翻
+POSITIONS = sorted(positions, key=lambda p: (p.get("ci", 0), p.get("co", 0))) if positions else []
+pos_cursor = 0
+
 refresh_print = setup_logging()
 
 def refresh_cookie(strict=True):
@@ -105,7 +109,13 @@ logging.info(f"一共需要阅读 {READ_NUM} 次。")
 while index <= READ_NUM:
     data.pop('s')
     data['b'] = random.choice(book)
-    data['c'] = random.choice(chapter)
+    if POSITIONS:
+        if pos_cursor > 0 and random.random() < 0.05:
+            pos_cursor -= 1
+        data.update(POSITIONS[pos_cursor % len(POSITIONS)])
+        pos_cursor = (pos_cursor + 1) % len(POSITIONS)
+    else:
+        data['c'] = random.choice(chapter)
     thisTime = int(time.time())
     data['ct'] = thisTime
     data['rt'] = thisTime - lastTime
