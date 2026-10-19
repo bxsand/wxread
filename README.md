@@ -28,13 +28,15 @@
 
 `main.py` 的改动保持了向后兼容：当 `positions` 为空列表时，行为与上游完全一致（仍走 `random.choice(chapter)`）。
 
+**关于 `data` 字段的优先级**（容易踩坑）：`main.py` 每次循环先取 `book` 里的书 id，再用 `positions` 里的一组覆盖 `c` / `ci` / `co` / `sm` / `pr`。也就是说 **`data` 里这五个字段实际不生效**，真正起作用的是 `data` 中的 `appId`、`ps`、`pc`（设备标识）以及 `positions`。修改书目时请改 `book` + `positions`，而不是 `data`。
+
 ## 当前配置
 
 | 项 | 值 |
 | - | - |
 | 书名 | 木心全集（典藏套装十六册） |
 | `book` | `35032fe071f6e47f3506809` |
-| 位置池 | 9 组，覆盖第 397~406 章 |
+| 位置池 | 以 `config.py` 的 `positions` 为准（当前 9 组，覆盖第 397~406 章） |
 | `READ_NUM` | 60（每次 30 秒，共 30 分钟） |
 | 推送 | 未配置（`PUSH_METHOD` 留空即跳过推送） |
 
@@ -63,7 +65,7 @@
 
 ```bash
 python tools/collect_positions.py --book 35032fe071f6e47f3506809 --count 20 --interval 40
-python tools/patch_config.py   # 把抓到的位置写回 config.py
+python tools/write_positions.py   # 把 capture/positions.json 写回 config.py 的 positions 段
 ```
 
 阅读器只会在页面**可见且持续停留**时每 60~70 秒上报一次，采集期间不要切走窗口或最小化。
@@ -83,7 +85,7 @@ git merge upstream/main
 - **单会话限制**：同一微信读书账号同时只有一个有效 `wr_skey`。任务运行期间不要在本机打开微信读书网页版，否则会互相顶下线；脚本会自动续期恢复，但会丢失一次计数。
 - **定时不精确**：GitHub 定时任务在高峰期可能延迟 10~40 分钟，极端情况下当天可能跳过。
 - **私有仓库成本**：若改为私有仓库，Actions 按分钟计费（免费额度 2000 分钟/月，本配置约 1800 分钟/月）。
-- **位置池规模**：当前 9 组，游标约 4.5 分钟回到起点。
+- **位置池规模**：以 `config.py` 为准，组数决定游标一轮的时长（当前 9 组约 4.5 分钟一轮）。
 
 ## 免责声明
 
