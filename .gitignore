@@ -10,3 +10,8 @@ logs/
 .env
 .env.local
 .env.*.local
+.idea/
+.vscode/
+capture/
+!capture/positions.json
+.DS_Store
