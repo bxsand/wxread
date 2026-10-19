@@ -1,160 +1,99 @@
-# 更新第三版，提高读书稳定程度，最大限量保持cookie有效时间，欢迎fork！
+# wxread · 微信读书自动阅读（个人 fork）
 
-## 项目介绍 📚
+本仓库 fork 自 [findmover/wxread](https://github.com/findmover/wxread)，用于个人每日自动阅读，**不是上游官方版本**。
+脚本原理、字段含义、抓包方法、Docker 部署方式均沿用上游，请优先阅读 [上游 README](https://github.com/findmover/wxread#readme)。
+本文档只说明**本仓库相对上游做了哪些改动**，以及据此需要如何配置。
 
-这个脚本主要是为了在微信读书的阅读**挑战赛中刷时长**和**保持天数**。由于本人偶尔看书时未能及时签到，导致入场费打了水漂。网上找了一些，发现高赞的自动阅读需要挂阅读器模拟或者用ADB模拟，实现一点也不优雅。因此，我决定编写一个自动化脚本。通过对官网接口的抓包和JS逆向分析实现。
+## 目录
 
-该脚本具备以下功能：
+- [相对上游的改动](#相对上游的改动)
+- [当前配置](#当前配置)
+- [部署（GitHub Actions）](#部署github-actions)
+- [日常维护](#日常维护)
+- [已知限制](#已知限制)
+- [免责声明](#免责声明)
 
-- **阅读时长调节**：默认计入排行榜和挑战赛，时长可调节，默认为60分钟。
-- **定时运行推送**：可部署在GitHub Action/服务器上，支持每天定时运行并推送结果到微信。
-- **Cookie自动更新**：脚本能自动获取并更新Cookie，一次部署后面无需其它操作。
-- **轻量化设计**：本脚本实现了轻量化的编写，部署服务器/GIthub action后到点运行，无需额外硬件。
+## 相对上游的改动
 
-***
-## 操作步骤 🛠️
+| # | 文件 | 改动 | 动机 |
+| - | ---- | ---- | ---- |
+| 1 | `config.py` | 阅读目标由《三体》改为《木心全集（典藏套装十六册）》，`book` / `chapter` / `data` 全部按真实抓包重写 | 上游默认书目不再使用 |
+| 2 | `config.py` | 新增 `positions` 位置池（9 组 `c` / `ci` / `co` / `sm` / `pr`），每组来自一次真实翻页请求 | 让上报的阅读位置自身一致 |
+| 3 | `main.py` | 位置池由「随机取一组」改为**顺序游标**：按 `(ci, co)` 排序后逐页推进，5% 概率回退一页 | 消除随机跳页、同页重复等非真人特征 |
+| 4 | `.github/workflows/deploy.yml` | 定时由 `01:07` 改为北京时间 `02:06` 与 `04:02`（`6 18 * * *` / `2 20 * * *`），第二次兼作补跑 | 每天两次机会，降低单次失败影响 |
+| 5 | `.github/workflows/docker-publish.yml` | 在仓库设置中停用（文件保留） | 镜像构建对本仓库无意义，且每次 push 都会失败告警 |
+| 6 | `README.md`、`CHANGELOG.md` | 补充本仓库说明与变更记录 | 便于回溯改动来源 |
 
-### 抓包准备
+**`positions` 是怎么来的**：在网页版阅读器翻页时截获 `POST https://weread.qq.com/web/book/read` 的请求体，取其中 `c`（章节内容 id）、`ci`（章节序）、`co`（字符偏移）、`sm`（该位置正文摘要）、`pr`（页内位置）。这五个字段来自同一次请求，因此天然自洽，不存在拼装。
 
-脚本逻辑还是比较简单的，`main.py`与`push.py`代码不需要改动。在微信阅读官网 [微信读书](https://weread.qq.com/) 搜索【三体】点开阅读点击下一页进行抓包，抓到`read`接口 `https://weread.qq.com/web/book/read`，如果返回格式正常（如：
+`main.py` 的改动保持了向后兼容：当 `positions` 为空列表时，行为与上游完全一致（仍走 `random.choice(chapter)`）。
 
-```json
-{
-  "succ": 1,
-  "synckey": 564589834
-}
-```
-右键复制为Bash格式。
+## 当前配置
 
-### 方法一： GitHub Action部署运行（GitHub运行）
+| 项 | 值 |
+| - | - |
+| 书名 | 木心全集（典藏套装十六册） |
+| `book` | `35032fe071f6e47f3506809` |
+| 位置池 | 9 组，覆盖第 397~406 章 |
+| `READ_NUM` | 60（每次 30 秒，共 30 分钟） |
+| 推送 | 未配置（`PUSH_METHOD` 留空即跳过推送） |
 
+## 部署（GitHub Actions）
 
-- Fork这个仓库后，先打开 fork 的 **Actions** 页面，启用 `wxread` workflow；公开仓库 fork 后，定时 workflow 默认不会自动启用。
-- 在仓库 **Settings** -> 左侧列表中的 **Secrets and variables** -> **Actions**，然后在右侧的 **Repository secrets** 中添加如下值：
-  - `WXREAD_CURL_BASH`：上面抓read接口后转换为curl_bash的数据。
-  - `PUSH_METHOD`：推送方法，4选1推送方式（pushplus、wxpusher、telegram、serverChan）。
-  - `PUSHPLUS_TOKEN` or `WXPUSHER_SPT` or `TELEGRAM_BOT_TOKEN`&`TELEGRAM_CHAT_ID` or `SERVERCHAN_SPT`: 选择推送后填写对应token。
-  
-- 在 **Variables** 部分，最下方添加变量：
-  - `READ_NUM`：设定每次阅读的目标次数。
+1. Fork 本仓库或直接使用本仓库。
+2. 打开 **Actions** 页：
+   - fork 仓库的 workflow 默认被禁用，点 `I understand my workflows, go ahead and enable them`；
+   - 再点 `Enable workflow` 恢复 `schedule`（fork 的定时任务默认关闭）。
+3. **Settings → Secrets and variables → Actions**
+   - Secret `WXREAD_CURL_BASH`（必填）：微信读书 `read` 接口的 curl bash，含 Cookie；
+   - Secret `PUSH_METHOD`（可选）及对应 token；
+   - Variable `READ_NUM = 60`。
+4. **Settings → Environments**：新建 `AutoRead`。workflow 中声明了 `environment: AutoRead`，缺失时 job 会卡住。
+5. 手动执行一次 `Run workflow`，确认日志依次出现「密钥刷新成功」「阅读进度」「阅读脚本已完成」。
 
+`WXREAD_CURL_BASH` 的抓取方法见上游 README 的「抓包准备」。
 
-- 基本释义：
+## 日常维护
 
-| key                        | Value                               | 说明                                                         | 属性      |
-| ------------------------- | ---------------------------------- | ------------------------------------------------------------ | --------- |
-| `WXREAD_CURL_BASH`         | `read` 接口 `curl_bash`数据 | **必填**，必须提供有效指令                                   | secrets   |
-| `READ_NUM`                 | 阅读次数（每次 30 秒）              | **可选**，阅读时长，默认 20 分钟                           | variables |
-| `PUSH_METHOD`              | `pushplus`/`wxpusher`/`telegram`/`serverchan`    | **可选**，推送方式，4选1，默认不推送                                       |    secrets     |
-| `PUSHPLUS_TOKEN`           | PushPlus 的 token                   | 当 `PUSH_METHOD=pushplus` 时必填，[获取地址](https://www.pushplus.plus/uc.html) | secrets   |
-| `WXPUSHER_SPT`             | WxPusher 的token                    | 当 `PUSH_METHOD=wxpusher` 时必填，[获取地址](https://wxpusher.zjiecode.com/docs/#/?id=获取spt) | secrets   |
-| `TELEGRAM_BOT_TOKEN`  <br>`TELEGRAM_CHAT_ID`   <br>`http_proxy`/`https_proxy`（可选）| 群组id以及机器人token                 | 当 `PUSH_METHOD=telegram` 时必填，[配置文档](https://www.nodeseek.com/post-22475-1) | secrets   |
-| `SERVERCHAN_SPT`          | serverchan 的 SendKey               | 当 `PUSH_METHOD=serverchan` 时必填，[获取地址](https://sct.ftqq.com/sendkey) | secrets   |
+### 更新 Cookie
 
-**重要：除了READ_NUM配置在varables，其它的都配置在secrets里面的；需要推送`PUSH_METHOD`是必填的。**
+出现 `-2012 登录超时` 且脚本多次自动续期仍失败时，重新抓包并覆盖 Secret `WXREAD_CURL_BASH`。
 
-### 视频教程
-
-[![视频教程](https://github.com/user-attachments/assets/ec144869-3dbb-40fe-9bc5-f8bf1b5fce3c)](https://www.bilibili.com/video/BV1kJ6gY3En3/ "点击查看视频")
-
-
-### 方法二： 服务器运行（docker部署）
-
-**步骤1：** 创建 docker-compose.yml 文件
-
-```yaml
-services:
-  wxread:
-    image: ghcr.io/findmover/wxread:latest
-    container_name: wxread
-    restart: unless-stopped
-
-    environment:
-      TZ: "Asia/Shanghai"
-      
-      # 阅读次数（每次 30 秒），默认40为20分钟
-      READ_NUM: 40
-      
-      # 微信读书 curl bash 命令（必需）
-      # 使用 | 表示多行字符串，下一行开始粘贴完整的 curl 命令
-      WXREAD_CURL_BASH: |
-        curl 'https://weread.qq.com/web/book/read' \
-        -H 'accept: application/json, text/plain, */*' \
-        .....
-      
-      # 定时任务时间（Cron 表达式）
-      CRON_SCHEDULE: "0 1 * * *"
-      
-      # 可选配置：推送方式 (pushplus/wxpusher/telegram/serverchan)
-      PUSH_METHOD: ""
-      # PushPlus 推送配置
-      PUSHPLUS_TOKEN: ""
-      # Telegram 推送配置
-      TELEGRAM_BOT_TOKEN: ""
-      TELEGRAM_CHAT_ID: ""
-      # WxPusher 推送配置
-      WXPUSHER_SPT: ""
-      # ServerChan 推送配置
-      SERVERCHAN_SPT: ""
-```
-
-**Cron 定时任务配置：**
-- `0 1 * * *` - 每天凌晨1点（默认）
-- `0 */6 * * *` - 每6小时
-- `30 8 * * *` - 每天早上8:30
-
-**步骤2：** 启动容器
+### 扩展位置池
 
 ```bash
-docker-compose up -d
+python tools/collect_positions.py --book 35032fe071f6e47f3506809 --count 20 --interval 40
+python tools/patch_config.py   # 把抓到的位置写回 config.py
 ```
 
-**步骤3：** 查看日志和测试
+阅读器只会在页面**可见且持续停留**时每 60~70 秒上报一次，采集期间不要切走窗口或最小化。
+
+### 与上游同步
 
 ```bash
-# 查看日志
-docker-compose logs -f
-
-# 测试运行
-docker-compose exec wxread python /app/main.py
+git remote add upstream https://github.com/findmover/wxread.git
+git fetch upstream
+git merge upstream/main
 ```
 
-**Docker 说明：**
-- 镜像地址：`ghcr.io/findmover/wxread:latest`
-- 支持多架构：linux/amd64 和 linux/arm64
-- 推送代码到仓库会自动构建最新镜像
+冲突通常集中在 `main.py` 的游标分支和 `config.py` 的 `book` / `chapter` / `data` / `positions` 段。
 
-***
-## Attention 📢
+## 已知限制
 
-1. **签到次数调整**：只需签到完成挑战赛可以将`num`次数从120调整为2，每次`num`为30秒，200即100分钟。
-   
-2. **解决阅读时间问题**：对于issue中提出的“阅读时间没有增加”，“增加时间与刷的时间不对等”建议保留`config.py`中的【data】字段，默认阅读三体，其它书籍自行测试。
+- **单会话限制**：同一微信读书账号同时只有一个有效 `wr_skey`。任务运行期间不要在本机打开微信读书网页版，否则会互相顶下线；脚本会自动续期恢复，但会丢失一次计数。
+- **定时不精确**：GitHub 定时任务在高峰期可能延迟 10~40 分钟，极端情况下当天可能跳过。
+- **私有仓库成本**：若改为私有仓库，Actions 按分钟计费（免费额度 2000 分钟/月，本配置约 1800 分钟/月）。
+- **位置池规模**：当前 9 组，游标约 4.5 分钟回到起点。
 
-3. **GitHub Action部署/本地部署**：主要配置config.py即可，Action部署使用环境变量，本地部署修改config.py里的阅读次数、headers、cookies即可。
+## 免责声明
 
-4. **推送**：pushplus推送偶尔出问题，猜测是GitHub action环境问题，增加重试机制。并增加wxpusher的极简推送方式。
+本项目仅供学习与技术研究，请勿用于商业用途。使用本脚本产生的任何后果（包括但不限于账号异常、挑战赛判定、数据丢失）由使用者自行承担。请遵守微信读书用户协议。
 
+## 致谢
 
-***
-## 字段解释 🔍
+- [findmover/wxread](https://github.com/findmover/wxread)：本仓库的全部核心逻辑（接口逆向、`sg` 签名、Cookie 续期、推送渠道）均来自上游。
+- 上游 README 中的字段解释与抓包步骤。
 
-| 字段 | 示例值 | 解释 |
-| --- | --- | --- |
-| `appId` | `"wbxxxxxxxxxxxxxxxxxxxxxxxx"` | 应用的唯一标识符。 |
-| `b` | `"ce032b305a9bc1ce0b0dd2a"` | 书籍或章节的唯一标识符。 |
-| `c` | `"0723244023c072b030ba601"` | 内容的唯一标识符，可能是页面或具体段落。 |
-| `ci` | `60` | 章节或部分的索引。 |
-| `co` | `336` | 内容的具体位置或页码。 |
-| `sm` | `"[插图]威慑纪元61年，执剑人在一棵巨树"` | 当前阅读的内容描述或摘要。 |
-| `pr` | `65` | 页码或段落索引。 |
-| `rt` | `88` | 阅读时长或阅读进度。 |
-| `ts` | `1727580815581` | 时间戳，表示请求发送的具体时间（毫秒级）。 |
-| `rn` | `114` | 随机数或请求编号，用于标识唯一的请求。 |
-| `sg` | `"bfdf7de2fe1673546ca079e2f02b79b937901ef789ed5ae16e7b43fb9e22e724"` | 安全签名，用于验证请求的合法性和完整性。 |
-| `ct` | `1727580815` | 时间戳，表示请求发送的具体时间（秒级）。 |
-| `ps` | `"xxxxxxxxxxxxxxxxxxxxxxxx"` | 用户标识符或会话标识符，用于追踪用户或会话。 |
-| `pc` | `"xxxxxxxxxxxxxxxxxxxxxxxx"` | 设备标识符或客户端标识符，用于标识用户的设备或客户端。 |
-| `s` | `"fadcb9de"` | 校验和或哈希值，用于验证请求数据的完整性。 |
+## 许可
 
-
+上游仓库未附许可证文件，本仓库沿用上游的授权状态。若需商用或再分发，请先联系上游作者。
