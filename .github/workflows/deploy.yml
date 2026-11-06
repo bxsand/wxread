@@ -5,18 +5,12 @@ concurrency:
   cancel-in-progress: true    # 取消任何正在进行的相同并发组的工作流
 
 on:
-  schedule:
-    # 时段选择原则：避开整点后 10 分钟（GitHub 官方：整点是 Actions 高负载窗口，
-    # 排队可能延迟甚至被丢弃），也不用 :30 这种半整点。
-    # 凌晨任务：北京时间每天 01:23（UTC 前一天 17:23）
-    - cron: '23 17 * * *'
-    # 补跑任务：北京时间每天 03:47（UTC 前一天 19:47）
-    - cron: '47 19 * * *'
-    # 午间任务（备用槽，暂不启用）：北京时间每天 11:40（UTC 03:40）
-    #- cron: '40 3 * * *'
-    # 晚间任务（备用槽，暂不启用）：北京时间每天 22:00（UTC 14:00）
-    #- cron: '0 14 * * *'
-  workflow_dispatch:  # 手动触发
+  # 定时已移交华为云函数（FunctionGraph 定时触发器 -> workflow_dispatch），
+  # 原因：GitHub 的 schedule 事件在高负载时会延迟数小时甚至丢弃排队作业。
+  # 原 cron（如需回滚，取消注释并停用云函数触发器即可）：
+  #   - cron: '23 17 * * *'   # 北京 01:23
+  #   - cron: '47 19 * * *'   # 北京 03:47
+  workflow_dispatch:  # 手动触发 / 云函数触发
 
 jobs:
   deploy:
